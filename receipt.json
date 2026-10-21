@@ -1,0 +1,26 @@
+{
+  "upstream": "https://github.com/DrKLO/Telegram.git",
+  "base": "f32ffeec763f0bdbf4bec25b52d654f77bff733d",
+  "local_head": "fdfecfa039cc7c572c62e77c518c5b8299bc3da6",
+  "patch_sha256": "690561e05c8f604165817020e611e840e360d12ee477d141db563591af569d08",
+  "files": {
+    ".gitignore": "ffada378d6b1325f7536ff26206ddc732ee54517ac7c89f1ac06b19fa342200d",
+    "TMessagesProj/config/debug/AndroidManifest_SDK23.xml": "233a37f774f76edfc80e36529bf3ed6e6962c749d201dc799f1aadc472f23676",
+    "TMessagesProj/src/main/java/org/telegram/messenger/ProxyRotationController.java": "a14a8bb011f3cc4fadaac12bd1003065999f26548b206dc74c2c85fb90319c88",
+    "TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java": "99c5e73c0cfa54e22d3a23d692fc77cfc98ade0768585e9c6338d11d40544dd7",
+    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java": "8498c2f2459dbad28c30fcff36e020ed5edf9ab855b7611634608537e7811893",
+    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java": "cd879d9328055864163939b6f984da19efc24c8d7f3472a9e28b8ac98e27ca6b",
+    "TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java": "81118f8575cb70c3169d35cf03c8a570510dc5e365359ddb4aa66ef60e23c494",
+    "TMessagesProj/src/main/java/org/telegram/ui/ProxyListActivity.java": "8d56c6b0ca3d3173de07b4556cbf82c32ac44841d67afe40e48b31d362cc2a2d",
+    "TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java": "9b56c4f5cb43d7a566d272c74747363c43336c920c285f1a9be24eb75ebfe25a",
+    "TMessagesProj/src/main/res/drawable/header_proxy_shield_done.xml": "d5f68e7952133228ac0615aa1b0a5d12deb82a59a2509e11c67653d6424b3c44",
+    "TMessagesProj/src/main/res/drawable/outline_shield_flash_24.xml": "ed64332b77e242276e6e2d65e023f7632b8b6b4ca26d3788cbbdf6577db7119a",
+    "TMessagesProj/src/main/res/values/strings.xml": "d1d588bb0fa31077a7ea71d657c8dc5be6dabc4cd3ebb327951faee40638e4e2",
+    "TMessagesProj_AppTests/DirectRowBehaviorRegressionTest.java": "1065621e236b0c7b0a9ed24ceaabc842f72371d8c9f3f43a4891d9c76b79aae9",
+    "TMessagesProj_AppTests/check_direct_first_regression.py": "97f542f103321f046a36163d998e169ad8cf7be488d072449777978f6f099180",
+    "TMessagesProj_AppTests/check_proxy_header_regression.py": "c8afef8cb9bdf2e473a5b87958fd7c3d5e0964ded1e0b1312e1682566dd9bc3b"
+  },
+  "apk_sha256": "b33a4406e50688f6b982077071f28c63dfe899f204b552d222436419e63d6d2e",
+  "original_test_sha256": "daa76fa34d720978a0c7d4b57aa81f17a474e95387695c37d98072015ab05468",
+  "packaging_only_transform": "Java harness scratch directory uses java.io.tmpdir instead of local absolute path; application source unchanged."
+}

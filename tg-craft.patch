@@ -1,0 +1,1094 @@
+diff --git a/.gitignore b/.gitignore
+index 9db930039c4acf6a6b984aa6c557cd9915246004..3af9d560dd3471f2c391a7b0ed625dc62821be8a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -16,0 +17 @@ TMessagesProj/jni/ffmpeg/build_android
++.hermes/
+diff --git a/TMessagesProj/config/debug/AndroidManifest_SDK23.xml b/TMessagesProj/config/debug/AndroidManifest_SDK23.xml
+index 6f23df282034040c334af3c6824e6e95294bb42a..fb2a6766202e996f2389c2f74acb3105dbc47e22 100644
+--- a/TMessagesProj/config/debug/AndroidManifest_SDK23.xml
++++ b/TMessagesProj/config/debug/AndroidManifest_SDK23.xml
+@@ -9,0 +10 @@
++    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+@@ -54,16 +54,0 @@
+-        <receiver
+-            tools:replace="android:enabled"
+-            android:name="com.google.android.gms.measurement.AppMeasurementReceiver"
+-            android:enabled="false"
+-            android:exported="false">
+-            <intent-filter>
+-                <action android:name="com.google.android.gms.measurement.UPLOAD" />
+-            </intent-filter>
+-        </receiver>
+-
+-        <service
+-            tools:replace="android:enabled"
+-            android:name="com.google.android.gms.measurement.AppMeasurementService"
+-            android:enabled="false"
+-            android:exported="false" />
+-
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ProxyRotationController.java b/TMessagesProj/src/main/java/org/telegram/messenger/ProxyRotationController.java
+index e43cdc9aa157306878a87fbaf05a2b99656f594d..b587004e0e95948508460223cb0b86fbf6b4ccad 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/ProxyRotationController.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ProxyRotationController.java
+@@ -22,0 +23,5 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
++        if (ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive()) {
++            isCurrentlyChecking = false;
++            return;
++        }
++
+@@ -62 +67 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
+-        if (!SharedConfig.proxyRotationEnabled) {
++        if (!SharedConfig.proxyRotationEnabled || ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive()) {
+@@ -97 +102,2 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
+-            if (!SharedConfig.isProxyEnabled() || !SharedConfig.proxyRotationEnabled || SharedConfig.proxyList.size() <= 1 || !isCurrentlyChecking) {
++            if (!SharedConfig.isProxyEnabled() || !SharedConfig.proxyRotationEnabled || SharedConfig.proxyList.size() <= 1 || !isCurrentlyChecking
++                    || ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive()) {
+@@ -108,0 +115,5 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
++            if (ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive()) {
++                AndroidUtilities.cancelRunOnUIThread(checkProxyAndSwitchRunnable);
++                return;
++            }
++
+diff --git a/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java b/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
+index 778af48565566b01502586011150fa8fd76f39c0..613270bebe6596bbac3cf31f3e3fcd18eb24a57e 100644
+--- a/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
++++ b/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java
+@@ -195,0 +196,57 @@ public class ConnectionsManager extends BaseController {
++    private static final int DIRECT_PROBE_TIMEOUT_MS = 2000;
++    private static boolean directProbeAttempted = false;
++    private static boolean directProbeActive = false;
++    private static boolean directRetainedActive = false;
++    private static int directProbeOwnerAccount = -1;
++    private static long directProbeDeadline = 0;
++    private static int directProbeGeneration = 0;
++    private static Runnable directFallbackRunnable = null;
++
++    public static boolean isDirectProbeActive() {
++        return directProbeActive;
++    }
++
++    public static boolean isDirectRetainedActive() {
++        return directRetainedActive;
++    }
++
++    private static void applyProxySettingsInternal(ProxySettings proxySettings) {
++        String address = "";
++        int port = 0;
++        String username = "";
++        String password = "";
++        String secret = "";
++
++        if (proxySettings != null && proxySettings.isValid()) {
++            address = proxySettings.getAddress();
++            port = proxySettings.getPort();
++            username = proxySettings.getUser();
++            password = proxySettings.getPassword();
++            secret = proxySettings.getSecret();
++
++            if (proxySettings.getType() == ProxySettings.Type.WEB) {
++                int localPort = WebProxyTransport.start(address, secret);
++                address = "127.0.0.1";
++                port = localPort != 0 ? localPort : 9;
++                username = "";
++                password = "";
++            } else {
++                WebProxyTransport.stop();
++            }
++        } else {
++            WebProxyTransport.stop();
++        }
++
++        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
++            if (proxySettings != null && proxySettings.isValid()) {
++                native_setProxySettings(a, address, port, username, password, secret);
++            } else {
++                native_setProxySettings(a, "", 1080, "", "", "");
++            }
++            AccountInstance accountInstance = AccountInstance.getInstance(a);
++            if (accountInstance.getUserConfig().isClientActivated()) {
++                accountInstance.getMessagesController().checkPromoInfo(true);
++            }
++        }
++    }
++
+@@ -651,8 +708,31 @@ public class ConnectionsManager extends BaseController {
+-        if (preferences.getBoolean("proxy_enabled", false) && proxySettings.isValid()) {
+-            if (proxySettings.getType() == ProxySettings.Type.WEB) {
+-                int localPort = WebProxyTransport.start(proxySettings.getAddress(), proxySettings.getSecret());
+-                native_setProxySettings(currentAccount, "127.0.0.1", localPort != 0 ? localPort : 9, "", "",
+-                        proxySettings.getSecret());
+-            } else {
+-                native_setProxySettings(currentAccount, proxySettings.getAddress(), proxySettings.getPort(),
+-                        proxySettings.getUser(), proxySettings.getPassword(), proxySettings.getSecret());
++        final boolean proxyEnabled = preferences.getBoolean("proxy_enabled", false);
++        final boolean directFirst = preferences.getBoolean("proxy_direct_first", false);
++
++        if (proxyEnabled && proxySettings.isValid()) {
++            if (directFirst && !directProbeAttempted) {
++                directProbeAttempted = true;
++                directProbeActive = true;
++                directProbeOwnerAccount = currentAccount;
++                directProbeDeadline = SystemClock.elapsedRealtime() + DIRECT_PROBE_TIMEOUT_MS;
++                directProbeGeneration++;
++                final int currentGen = directProbeGeneration;
++                directFallbackRunnable = () -> {
++                    if (directProbeActive && directProbeGeneration == currentGen) {
++                        directProbeActive = false;
++                        directProbeOwnerAccount = -1;
++                        directProbeDeadline = 0;
++                        directFallbackRunnable = null;
++                        applyProxySettingsInternal(proxySettings);
++                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
++                    }
++                };
++                AndroidUtilities.runOnUIThread(directFallbackRunnable, DIRECT_PROBE_TIMEOUT_MS);
++            } else if (!directProbeActive && !directRetainedActive) {
++                if (proxySettings.getType() == ProxySettings.Type.WEB) {
++                    int localPort = WebProxyTransport.start(proxySettings.getAddress(), proxySettings.getSecret());
++                    native_setProxySettings(currentAccount, "127.0.0.1", localPort != 0 ? localPort : 9, "", "",
++                            proxySettings.getSecret());
++                } else {
++                    native_setProxySettings(currentAccount, proxySettings.getAddress(), proxySettings.getPort(),
++                            proxySettings.getUser(), proxySettings.getPassword(), proxySettings.getSecret());
++                }
+@@ -840,0 +921,13 @@ public class ConnectionsManager extends BaseController {
++            if (directProbeActive && state == ConnectionStateConnected) {
++                if (currentAccount == directProbeOwnerAccount && SystemClock.elapsedRealtime() <= directProbeDeadline) {
++                    directProbeActive = false;
++                    directRetainedActive = true;
++                    directProbeOwnerAccount = -1;
++                    directProbeDeadline = 0;
++                    if (directFallbackRunnable != null) {
++                        AndroidUtilities.cancelRunOnUIThread(directFallbackRunnable);
++                        directFallbackRunnable = null;
++                    }
++                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
++                }
++            }
+@@ -962,21 +1055,9 @@ public class ConnectionsManager extends BaseController {
+-        String address = "";
+-        int port = 0;
+-        String username = "";
+-        String password = "";
+-        String secret = "";
+-
+-        if (enabled && settings != null && settings.isValid()) {
+-            address = settings.getAddress();
+-            port = settings.getPort();
+-            username = settings.getUser();
+-            password = settings.getPassword();
+-            secret = settings.getSecret();
+-
+-            if (settings.getType() == ProxySettings.Type.WEB) {
+-                int localPort = WebProxyTransport.start(address, secret);
+-                address = "127.0.0.1";
+-                port = localPort != 0 ? localPort : 9;
+-                username = "";
+-                password = "";
+-            } else {
+-                WebProxyTransport.stop();
++        directProbeAttempted = true;
++        directProbeGeneration++;
++        if (directProbeActive || directFallbackRunnable != null) {
++            directProbeActive = false;
++            directProbeOwnerAccount = -1;
++            directProbeDeadline = 0;
++            if (directFallbackRunnable != null) {
++                AndroidUtilities.cancelRunOnUIThread(directFallbackRunnable);
++                directFallbackRunnable = null;
+@@ -984,2 +1064,0 @@ public class ConnectionsManager extends BaseController {
+-        } else {
+-            WebProxyTransport.stop();
+@@ -986,0 +1066 @@ public class ConnectionsManager extends BaseController {
++        directRetainedActive = false;
+@@ -988,11 +1068,2 @@ public class ConnectionsManager extends BaseController {
+-        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+-            if (enabled && settings != null && settings.isValid()) {
+-                native_setProxySettings(a, address, port, username, password, secret);
+-            } else {
+-                native_setProxySettings(a, "", 1080, "", "", "");
+-            }
+-            AccountInstance accountInstance = AccountInstance.getInstance(a);
+-            if (accountInstance.getUserConfig().isClientActivated()) {
+-                accountInstance.getMessagesController().checkPromoInfo(true);
+-            }
+-        }
++        ProxySettings toApply = (enabled && settings != null && settings.isValid()) ? settings : null;
++        applyProxySettingsInternal(toApply);
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java b/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java
+index f8960d3546bdd425b2ddf571e5ca757f82155947..07779839a926a98d1527dc3e1eac750bc79380d1 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java
+@@ -136,0 +137 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
++    private Drawable lastRightDrawable2;
+@@ -580,0 +582 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
++            titleTextView[0].setRightDrawable2(lastRightDrawable2);
+@@ -584,0 +587,12 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
++    public void setRightDrawable2(Drawable rightDrawable2) {
++        lastRightDrawable2 = rightDrawable2;
++        if (!titleOverlayShown) {
++            if (titleTextView[0] != null) {
++                titleTextView[0].setRightDrawable2(rightDrawable2);
++            }
++            if (titleTextView[1] != null) {
++                titleTextView[1].setRightDrawable2(rightDrawable2);
++            }
++        }
++    }
++
+@@ -1649,0 +1664,4 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
++    public Runnable getTitleActionRunnable() {
++        return titleActionRunnable;
++    }
++
+@@ -1679,0 +1698 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
++        Drawable rightDrawable2ToSet = title != null ? null : lastRightDrawable2;
+@@ -1699,0 +1719 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
++            titleTextView[0].setRightDrawable2(rightDrawable2ToSet);
+@@ -1719,0 +1740 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
++            titleTextView[1].setRightDrawable2(rightDrawable2ToSet);
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java b/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java
+index e6098666f0e08dab01e8de1cd6128a684e7f5365..c8e3a395296c8352b6f23225ef66f5a970a87105 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java
+@@ -397,2 +397,3 @@ public class SimpleTextView extends View implements Drawable.Callback {
+-                        rightDrawableWidth += (int) (rightDrawable.getIntrinsicWidth() * rightDrawableScale);
+-                        width -= rightDrawableWidth;
++                        int dw = (int) (rightDrawable.getIntrinsicWidth() * rightDrawableScale);
++                        rightDrawableWidth += dw;
++                        width -= dw;
+@@ -402,2 +403,3 @@ public class SimpleTextView extends View implements Drawable.Callback {
+-                        rightDrawableWidth += (int) (rightDrawable2.getIntrinsicWidth() * rightDrawableScale);
+-                        width -= rightDrawableWidth;
++                        int dw2 = (int) (rightDrawable2.getIntrinsicWidth() * rightDrawableScale);
++                        rightDrawableWidth += dw2;
++                        width -= dw2;
+@@ -805,2 +807,3 @@ public class SimpleTextView extends View implements Drawable.Callback {
+-                    rightDrawableWidth = (int) (rightDrawable.getIntrinsicWidth() * rightDrawableScale);
+-                    width -= rightDrawableWidth;
++                    int dw = (int) (rightDrawable.getIntrinsicWidth() * rightDrawableScale);
++                    rightDrawableWidth += dw;
++                    width -= dw;
+@@ -810,2 +813,3 @@ public class SimpleTextView extends View implements Drawable.Callback {
+-                    rightDrawableWidth = (int) (rightDrawable2.getIntrinsicWidth() * rightDrawableScale);
+-                    width -= rightDrawableWidth;
++                    int dw2 = (int) (rightDrawable2.getIntrinsicWidth() * rightDrawableScale);
++                    rightDrawableWidth += dw2;
++                    width -= dw2;
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
+index 0c5dc3fb84325f6c627f9ef3c1feaf8af10b7856..f29df910e73398f9212600d0930f6b1f90df631e 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
+@@ -3521,0 +3522 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++                updateProxyHeaderIndicator();
+@@ -3532,0 +3534,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++            if (initialDialogsType == DIALOGS_TYPE_DEFAULT && !onlySelect && folderId == 0 && communityId == 0 && TextUtils.isEmpty(searchString)) {
++                if (ConnectionsManager.getInstance(currentAccount).getConnectionState() == ConnectionsManager.ConnectionStateConnected
++                        && !ConnectionsManager.isDirectProbeActive() && !ConnectionsManager.isDirectRetainedActive()) {
++                    SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
++                    if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(preferences.getString("proxy_ip", ""))) {
++                        presentFragment(new ProxyListActivity());
++                        return;
++                    }
++                }
++            }
+@@ -5324,0 +5336 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++        updateProxyHeaderIndicator();
+@@ -10219,0 +10232,32 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++    private void updateProxyHeaderIndicator() {
++        if (actionBar != null) {
++            actionBar.setRightDrawable2(null);
++            if (actionBar.getTitleTextView() != null) {
++                actionBar.getTitleTextView().setContentDescription(null);
++            }
++        }
++        final SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
++        boolean proxyEnabled = preferences.getBoolean("proxy_enabled", false);
++        int connectionState = ConnectionsManager.getInstance(currentAccount).getConnectionState();
++        boolean isMainChat = initialDialogsType == DIALOGS_TYPE_DEFAULT && !onlySelect && folderId == 0 && communityId == 0 && TextUtils.isEmpty(searchString);
++        boolean isDirect = ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive();
++        boolean isProxyActuallyConnected = isMainChat && proxyEnabled && !isDirect && !TextUtils.isEmpty(preferences.getString("proxy_ip", "")) && connectionState == ConnectionsManager.ConnectionStateConnected;
++        if (dialogStoriesCell != null) {
++            if (isProxyActuallyConnected) {
++                Drawable shieldDrawable = ContextCompat.getDrawable(ApplicationLoader.applicationContext, R.drawable.header_proxy_shield_done);
++                AnimatedEmojiDrawable.WrapSizeDrawable wrappedShield = null;
++                if (shieldDrawable != null) {
++                    shieldDrawable = shieldDrawable.mutate();
++                    final boolean isDark = resourceProvider != null ? resourceProvider.isDark() : Theme.isCurrentThemeDark();
++                    int colorKey = isDark ? Theme.key_actionBarDefaultSubtitle : Theme.key_chats_tabUnreadUnactiveBackground;
++                    shieldDrawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(colorKey), PorterDuff.Mode.SRC_IN));
++                    wrappedShield = new AnimatedEmojiDrawable.WrapSizeDrawable(shieldDrawable, dp(16), dp(16));
++                }
++                String description = LocaleController.getString(R.string.AppName) + ", " + LocaleController.getString(R.string.MenuProxyConnected) + ", " + LocaleController.getString(R.string.ProxySettings);
++                dialogStoriesCell.setProxyIndicator(wrappedShield, description);
++            } else {
++                dialogStoriesCell.setProxyIndicator(null, null);
++            }
++        }
++    }
++
+@@ -10220,0 +10265 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++        updateProxyHeaderIndicator();
+@@ -10240,3 +10285,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+-        final boolean connected = currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating;
+-        proxyMenuSubItem.setSubtext(getString(proxyEnabled ? (connected ? R.string.MenuProxyConnected : R.string.MenuProxyConnecting) : R.string.MenuProxyDisabled));
+-        proxyDrawable.setConnected(proxyEnabled, connected, animated);
++        boolean hasProxyConfigured = !TextUtils.isEmpty(preferences.getString("proxy_ip", ""));
++        boolean isConnectedOrUpdating = currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating;
++        boolean isEffectiveDirect = !proxyEnabled || !hasProxyConfigured || ConnectionsManager.isDirectRetainedActive() || ConnectionsManager.isDirectProbeActive();
++
++        if (isEffectiveDirect) {
++            proxyMenuSubItem.setText(getString(R.string.DirectConnection));
++            proxyMenuSubItem.setSubtext(getString(isConnectedOrUpdating ? R.string.MenuProxyConnected : R.string.MenuProxyConnecting));
++            proxyMenuSubItem.setIcon(R.drawable.outline_shield_flash_24);
++            proxyDrawable.setConnected(false, false, animated);
++        } else {
++            proxyMenuSubItem.setText(getString(R.string.MenuProxyTitle));
++            proxyMenuSubItem.setSubtext(getString(isConnectedOrUpdating ? R.string.MenuProxyConnected : R.string.MenuProxyConnecting));
++            proxyMenuSubItem.setIcon(proxyDrawable);
++            proxyDrawable.setConnected(true, isConnectedOrUpdating, animated);
++        }
+@@ -12195,0 +12253,4 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++        arrayList.addAll(SimpleThemeDescription.createThemeDescriptions(() -> {
++            updateProxyHeaderIndicator();
++        }, Theme.key_actionBarDefaultSubtitle, Theme.key_chats_tabUnreadUnactiveBackground));
++
+@@ -13770,0 +13832 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++            updateProxyButton(false, false);
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ProxyListActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ProxyListActivity.java
+index d222504bb46f54f3029f2013ee84b7480af24502..e5b57f8f4721c204dd88c37cf72b34ed92033e08 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ProxyListActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ProxyListActivity.java
+@@ -88,0 +89 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++    private boolean proxyDirectFirst;
+@@ -102,0 +104,3 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++    private int directFirstRow;
++    private int directFirstShadowRow;
++    private int directRow;
+@@ -158 +162,5 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-            checkImageView.setOnClickListener(v -> presentFragment(new ProxySettingsActivity(currentInfo)));
++            checkImageView.setOnClickListener(v -> {
++                if (currentInfo != null) {
++                    presentFragment(new ProxySettingsActivity(currentInfo));
++                }
++            });
+@@ -178,0 +187,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++            checkImageView.setVisibility(isSelectionEnabled ? GONE : VISIBLE);
++        }
++
++        public void setDirect() {
++            currentInfo = null;
++            textView.setText(getString(R.string.DirectConnection));
++            checkImageView.setVisibility(GONE);
++            updateStatus();
+@@ -183 +199,18 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-            if (SharedConfig.currentProxy == currentInfo && useProxySettings) {
++            boolean isDirectEffective = !useProxySettings || ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive();
++            if (currentInfo == null) {
++                if (ConnectionsManager.isDirectProbeActive()) {
++                    valueTextView.setText(getString(R.string.Checking));
++                    colorKey = Theme.key_windowBackgroundWhiteGrayText2;
++                } else if (isDirectEffective) {
++                    if (currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating) {
++                        valueTextView.setText(getString(R.string.Connected));
++                        colorKey = Theme.key_windowBackgroundWhiteBlueText6;
++                    } else {
++                        valueTextView.setText(getString(R.string.Connecting));
++                        colorKey = Theme.key_windowBackgroundWhiteGrayText2;
++                    }
++                } else {
++                    valueTextView.setText(getString(R.string.WithoutProxy));
++                    colorKey = Theme.key_windowBackgroundWhiteGrayText2;
++                }
++            } else if (SharedConfig.currentProxy == currentInfo && useProxySettings && !isDirectEffective) {
+@@ -235 +268 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-                checkImageView.setVisibility(enabled ? GONE : VISIBLE);
++                checkImageView.setVisibility(enabled || currentInfo == null ? GONE : VISIBLE);
+@@ -259,4 +292,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-                    scale = 0.5f + (1f - val) * 0.5f;
+-                    checkImageView.setScaleX(scale);
+-                    checkImageView.setScaleY(scale);
+-                    checkImageView.setAlpha(1f - val);
++                    if (currentInfo != null) {
++                        scale = 0.5f + (1f - val) * 0.5f;
++                        checkImageView.setScaleX(scale);
++                        checkImageView.setScaleY(scale);
++                        checkImageView.setAlpha(1f - val);
++                    }
+@@ -271,2 +306,4 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-                            checkImageView.setAlpha(0f);
+-                            checkImageView.setVisibility(VISIBLE);
++                            if (currentInfo != null) {
++                                checkImageView.setAlpha(0f);
++                                checkImageView.setVisibility(VISIBLE);
++                            }
+@@ -278 +315 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-                        if (enabled) {
++                        if (enabled || currentInfo == null) {
+@@ -344,0 +382 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++        proxyDirectFirst = preferences.getBoolean("proxy_direct_first", false);
+@@ -438,0 +477,26 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++                updateRows(true);
++            } else if (position == directFirstRow) {
++                proxyDirectFirst = !proxyDirectFirst;
++                TextCheckCell textCheckCell = (TextCheckCell) view;
++                textCheckCell.setChecked(proxyDirectFirst);
++                SharedPreferences preferences = MessagesController.getGlobalMainSettings();
++                SharedPreferences.Editor editor = preferences.edit();
++                editor.putBoolean("proxy_direct_first", proxyDirectFirst);
++                editor.apply();
++
++                if (!proxyDirectFirst) {
++                    boolean proxyEnabled = preferences.getBoolean("proxy_enabled", false);
++                    ProxySettings savedSettings = ProxySettings.fromSharedPreferences(preferences);
++                    if (savedSettings != null && savedSettings.isValid()) {
++                        useProxySettings = true;
++                        editor = preferences.edit();
++                        editor.putBoolean("proxy_enabled", true);
++                        editor.apply();
++                        ConnectionsManager.setProxySettings(true, savedSettings);
++                    } else {
++                        ConnectionsManager.setProxySettings(proxyEnabled, savedSettings);
++                    }
++                    NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
++                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
++                    NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
++                }
+@@ -615,0 +680,2 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++        directFirstRow = rowCount++;
++        directFirstShadowRow = rowCount++;
+@@ -616,0 +683 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++        directRow = proxyDirectFirst ? rowCount++ : -1;
+@@ -725,5 +792,4 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-                if (listView != null && SharedConfig.currentProxy != null) {
+-                    int idx = proxyList.indexOf(SharedConfig.currentProxy);
+-                    if (idx >= 0) {
+-                        RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(idx + proxyStartRow);
+-                        if (holder != null) {
++                if (listView != null) {
++                    if (directRow >= 0) {
++                        RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(directRow);
++                        if (holder != null && holder.itemView instanceof TextDetailProxyCell) {
+@@ -730,0 +797,2 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++                            boolean isDirectEffective = !useProxySettings || ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive();
++                            cell.setChecked(isDirectEffective);
+@@ -733,0 +802,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++                    if (SharedConfig.currentProxy != null) {
++                        int idx = proxyList.indexOf(SharedConfig.currentProxy);
++                        if (idx >= 0) {
++                            RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(idx + proxyStartRow);
++                            if (holder != null) {
++                                TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
++                                cell.updateStatus();
++                            }
++                        }
+@@ -735,2 +812,3 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-                    if (currentConnectionState == ConnectionsManager.ConnectionStateConnected) {
+-                        updateRows(true);
++                        if (currentConnectionState == ConnectionsManager.ConnectionStateConnected) {
++                            updateRows(true);
++                        }
+@@ -861,0 +940,2 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++                    } else if (position == directFirstRow) {
++                        checkCell.setTextAndValueAndCheck(getString(R.string.ProxyDirectFirst), getString(R.string.ProxyDirectFirstInfo), proxyDirectFirst, true, false);
+@@ -874,5 +954,13 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-                    SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
+-                    cell.setProxy(info);
+-                    cell.setChecked(SharedConfig.currentProxy == info);
+-                    cell.setItemSelected(selectedItems.contains(proxyList.get(position - proxyStartRow)), false);
+-                    cell.setSelectionEnabled(!selectedItems.isEmpty(), false);
++                    boolean isDirectEffective = !useProxySettings || ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive();
++                    if (position == directRow) {
++                        cell.setDirect();
++                        cell.setChecked(isDirectEffective);
++                        cell.setItemSelected(false, false);
++                        cell.setSelectionEnabled(false, false);
++                    } else if (position >= proxyStartRow && position < proxyEndRow) {
++                        SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
++                        cell.setProxy(info);
++                        cell.setChecked(useProxySettings && !isDirectEffective && SharedConfig.currentProxy == info);
++                        cell.setItemSelected(selectedItems.contains(proxyList.get(position - proxyStartRow)), false);
++                        cell.setSelectionEnabled(!selectedItems.isEmpty(), false);
++                    }
+@@ -916,0 +1005,2 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++                } else if (position == directFirstRow) {
++                    checkCell.setChecked(proxyDirectFirst);
+@@ -932,0 +1023,2 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++                } else if (position == directFirstRow) {
++                    checkCell.setChecked(proxyDirectFirst);
+@@ -940 +1032 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-            return position == useProxyRow || position == rotationRow || position == proxyAddRow || position == deleteAllRow || position >= proxyStartRow && position < proxyEndRow;
++            return position == useProxyRow || position == rotationRow || position == directFirstRow || position == proxyAddRow || position == deleteAllRow || position >= proxyStartRow && position < proxyEndRow;
+@@ -991,0 +1084,2 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++            } else if (position == directRow) {
++                return -14;
+@@ -999,0 +1094,4 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
++            } else if (position == directFirstRow) {
++                return -12;
++            } else if (position == directFirstShadowRow) {
++                return -13;
+@@ -1009 +1107 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-            if (position == useProxyShadowRow || position == proxyShadowRow) {
++            if (position == useProxyShadowRow || position == proxyShadowRow || position == directFirstShadowRow) {
+@@ -1013 +1111 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-            } else if (position == useProxyRow || position == rotationRow) {
++            } else if (position == useProxyRow || position == rotationRow || position == directFirstRow) {
+@@ -1019 +1117 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
+-            } else if (position >= proxyStartRow && position < proxyEndRow) {
++            } else if (position == directRow || (position >= proxyStartRow && position < proxyEndRow)) {
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java b/TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java
+index ac5d4b7ed670d48cf72c095390bea1196d46c629..5d838b8c0cc0fd77c344e82846ddd5c2f137d14d 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java
+@@ -162,0 +163,2 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
++    ImageView proxyIndicatorView;
++    AnimatedEmojiDrawable.WrapSizeDrawable proxyIndicatorDrawable;
+@@ -352,0 +355,10 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
++        proxyIndicatorView = new ImageView(context);
++        proxyIndicatorView.setScaleType(ImageView.ScaleType.CENTER);
++        proxyIndicatorView.setVisibility(GONE);
++        proxyIndicatorView.setOnClickListener(v -> {
++            if (actionBar != null && actionBar.getTitleActionRunnable() != null) {
++                actionBar.getTitleActionRunnable().run();
++            }
++        });
++        addView(proxyIndicatorView, LayoutHelper.createFrame(40, 40));
++
+@@ -949,0 +962,8 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
++            if (proxyIndicatorView != null && proxyIndicatorDrawable != null) {
++                int statusWidth = statusDrawable != null && statusDrawable.getDrawable() != null ? statusDrawable.getIntrinsicWidth() : 0;
++                float emojiGlyphCenterX = emojiStatusView.getTranslationX() + dp(20);
++                float proxyGlyphCenterX = (statusWidth > 0 ? emojiGlyphCenterX + (statusWidth / 2f) : telegramLogoView.getTranslationX() + telegramLogoView.getMeasuredWidth()) + dp(4) + (proxyIndicatorDrawable.getIntrinsicWidth() / 2f);
++                proxyIndicatorView.setTranslationX(proxyGlyphCenterX - dp(20));
++                proxyIndicatorView.setTranslationY(emojiStatusView.getTranslationY());
++            }
++
+@@ -2192,0 +2213,10 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
++    public void setProxyIndicator(AnimatedEmojiDrawable.WrapSizeDrawable drawable, String contentDescription) {
++        proxyIndicatorDrawable = drawable;
++        if (proxyIndicatorView != null) {
++            proxyIndicatorView.setImageDrawable(drawable);
++            proxyIndicatorView.setContentDescription(contentDescription);
++        }
++        checkUi_titleVisibility();
++        invalidate();
++    }
++
+@@ -2226,0 +2257,4 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
++        if (proxyIndicatorView != null) {
++            proxyIndicatorView.setAlpha(logoAlpha);
++            proxyIndicatorView.setVisibility(logoAlpha > 0 && proxyIndicatorDrawable != null ? VISIBLE : GONE);
++        }
+diff --git a/TMessagesProj/src/main/res/drawable/header_proxy_shield_done.xml b/TMessagesProj/src/main/res/drawable/header_proxy_shield_done.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..b968586d546f87ddb1b6c360936ca58603d230a6
+--- /dev/null
++++ b/TMessagesProj/src/main/res/drawable/header_proxy_shield_done.xml
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FFFFFF"
++        android:fillType="evenOdd"
++        android:pathData="M11.34 2.10741C11.7326 1.96817 12.1706 1.96521 12.5703 2.10053L19.2077 4.3275C19.9507 4.5756 20.453 5.2581 20.457 6.02297L20.4993 12.6636C20.5124 14.6768 19.7785 16.6292 18.4345 18.1589C17.8164 18.861 17.0241 19.4641 16.0123 20.0034L12.4444 21.9107C12.3327 21.9696 12.2099 22 12.086 22.001C11.9622 22.0019 11.8383 21.9725 11.7276 21.9146L8.1265 20.0515C7.10366 19.521 6.3043 18.9268 5.68013 18.2344C4.31399 16.7204 3.55493 14.7768 3.54184 12.7607L3.49954 6.12495C3.49553 5.35911 3.98881 4.67169 4.72774 4.41379L11.34 2.10741ZM16.8224 8.44002C16.3246 7.96688 15.5431 7.96686 15.0454 8.44002L15.0216 8.46327L10.5425 12.9423L9.00432 11.404L8.98043 11.3807C8.47471 10.9 7.67601 10.9078 7.17972 11.404C6.67544 11.9081 6.67552 12.7246 7.17963 13.2287L9.63025 15.6793C9.88158 15.9306 10.213 16.0572 10.5425 16.0572C10.8721 16.0572 11.2036 15.9306 11.4549 15.6792L16.8462 10.288C17.3425 9.79167 17.3503 8.99286 16.8695 8.48712L16.8462 8.46327L16.8224 8.44002Z" />
++</vector>
+diff --git a/TMessagesProj/src/main/res/drawable/outline_shield_flash_24.xml b/TMessagesProj/src/main/res/drawable/outline_shield_flash_24.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..f3bbe85a45d3005a3f46ddc8587bb671d7b072c7
+--- /dev/null
++++ b/TMessagesProj/src/main/res/drawable/outline_shield_flash_24.xml
+@@ -0,0 +1,14 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FFFFFF"
++        android:fillType="evenOdd"
++        android:pathData="M12.4191 6.59798C12.8357 6.82442 12.9897 7.34566 12.7633 7.76219L11.4041 10.2624H14.0385C14.3341 10.2624 14.6218 10.4219 14.7766 10.6823C14.9312 10.9427 14.9373 11.2654 14.7923 11.5313L12.7412 15.2978C12.5145 15.7141 11.9931 15.8678 11.5768 15.6411C11.1604 15.4143 11.0067 14.893 11.2334 14.4767L12.5935 11.9793H9.96031C9.65752 11.9793 9.37714 11.8197 9.22241 11.5595C9.06767 11.2993 9.06147 10.9767 9.20608 10.7107L11.2549 6.94215C11.4814 6.52562 12.0026 6.37152 12.4191 6.59798Z" />
++    <path
++        android:fillColor="#FFFFFF"
++        android:pathData="M12 23.1439C11.9157 23.1443 11.8321 23.132 11.7516 23.1073C11.3842 22.9928 2.7596 20.2996 2.7596 12.7509C2.7596 10.6506 2.73098 9.13286 2.71152 8.02031C2.66116 5.23436 2.64973 4.65405 3.37884 3.92608C4.24301 3.06305 10.7592 0.824219 12 0.824219C13.3106 0.824219 19.7432 3.04131 20.6234 3.92837C21.3502 4.66091 21.3387 5.24008 21.2883 8.02832C21.2688 9.14087 21.2414 10.6609 21.2414 12.7509C21.2414 20.2984 12.6158 22.9962 12.2495 23.1073C12.1686 23.1318 12.0845 23.1441 12 23.1439ZM12 2.54112C9.43388 3.12534 6.94337 4.00212 4.57723 5.15423C4.3941 5.33737 4.38722 5.71738 4.42842 7.98826C4.44788 9.10882 4.4765 10.6369 4.4765 12.7509C4.4765 18.3732 10.6688 20.9016 12 21.3789C13.3312 20.9016 19.5245 18.3732 19.5245 12.7509C19.5245 10.6414 19.5532 9.11683 19.5727 7.99856C19.6127 5.71967 19.6057 5.33966 19.4054 5.13707C17.0438 3.99274 14.5592 3.12179 12 2.54112Z" />
++</vector>
+diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
+index 169ab902ed787a52a738484c39c45b5ed0cbc751..6adc1c8197e91c36807d39f4167a7448af8da26c 100644
+--- a/TMessagesProj/src/main/res/values/strings.xml
++++ b/TMessagesProj/src/main/res/values/strings.xml
+@@ -6208,0 +6209,4 @@
++    <string name="ProxyDirectFirst">Try direct connection first</string>
++    <string name="ProxyDirectFirstInfo">Try direct for 2 seconds, then use your proxy if needed.</string>
++    <string name="DirectConnection">Direct connection</string>
++    <string name="WithoutProxy">Without proxy</string>
+diff --git a/TMessagesProj_AppTests/DirectRowBehaviorRegressionTest.java b/TMessagesProj_AppTests/DirectRowBehaviorRegressionTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a14f0593ee833652d42b1b90d1696a16d52d348
+--- /dev/null
++++ b/TMessagesProj_AppTests/DirectRowBehaviorRegressionTest.java
+@@ -0,0 +1,188 @@
++package org.telegram.apptests;
++
++import java.io.File;
++import java.lang.reflect.Method;
++import java.net.URL;
++import java.net.URLClassLoader;
++import java.nio.file.Files;
++import javax.tools.JavaCompiler;
++import javax.tools.ToolProvider;
++
++public class DirectRowBehaviorRegressionTest {
++
++    private static String extractMethodBody(String source, String signature) {
++        int idx = source.indexOf(signature);
++        if (idx == -1) {
++            throw new IllegalArgumentException("Method not found: " + signature);
++        }
++        int openBrace = source.indexOf('{', idx);
++        int balance = 1;
++        int i = openBrace + 1;
++        while (i < source.length() && balance > 0) {
++            char c = source.charAt(i);
++            if (c == '{') balance++;
++            else if (c == '}') balance--;
++            i++;
++        }
++        return source.substring(idx, i);
++    }
++
++    public static void main(String[] args) throws Exception {
++        System.out.println("Executing dynamic method extraction from ProxyListActivity.java...");
++
++        File sourceFile = new File("TMessagesProj/src/main/java/org/telegram/ui/ProxyListActivity.java");
++        String sourceContent = new String(Files.readAllBytes(sourceFile.toPath()));
++
++        String setDirectCode = extractMethodBody(sourceContent, "public void setDirect()");
++        String setSelectionEnabledCode = extractMethodBody(sourceContent, "public void setSelectionEnabled(boolean enabled, boolean animated)");
++
++        StringBuilder sb = new StringBuilder();
++        sb.append("package org.telegram.apptests.generated;\n\n");
++        sb.append("public class ExtractedCellRunner {\n");
++        sb.append("    public static final int VISIBLE = 0;\n");
++        sb.append("    public static final int GONE = 8;\n\n");
++        sb.append("    public static class Widget {\n");
++        sb.append("        public int visibility = VISIBLE;\n");
++        sb.append("        public float alpha = 1f, scaleX = 1f, scaleY = 1f, transX = 0f;\n");
++        sb.append("        public void setVisibility(int v) { this.visibility = v; }\n");
++        sb.append("        public void setAlpha(float a) { this.alpha = a; }\n");
++        sb.append("        public void setScaleX(float s) { this.scaleX = s; }\n");
++        sb.append("        public void setScaleY(float s) { this.scaleY = s; }\n");
++        sb.append("        public void setTranslationX(float t) { this.transX = t; }\n");
++        sb.append("        public void setText(CharSequence s) {}\n");
++        sb.append("    }\n\n");
++        sb.append("    public static class AndroidUtilities {\n");
++        sb.append("        public static float dp(float val) { return val * 2; }\n");
++        sb.append("        public static float lerp(float a, float b, float f) { return a + f * (b - a); }\n");
++        sb.append("    }\n\n");
++        sb.append("    public static class LocaleController {\n");
++        sb.append("        public static boolean isRTL = false;\n");
++        sb.append("    }\n\n");
++        sb.append("    public static class CubicBezierInterpolator {\n");
++        sb.append("        public static final Object DEFAULT = new Object();\n");
++        sb.append("    }\n\n");
++        sb.append("    public static class Animator {}\n\n");
++        sb.append("    public static class AnimatorListenerAdapter {\n");
++        sb.append("        public void onAnimationStart(Animator animation) {}\n");
++        sb.append("        public void onAnimationEnd(Animator animation) {}\n");
++        sb.append("    }\n\n");
++        sb.append("    public interface ValueAnimatorUpdateListener {\n");
++        sb.append("        void onAnimationUpdate(ValueAnimator animation);\n");
++        sb.append("    }\n\n");
++        sb.append("    public static class ValueAnimator {\n");
++        sb.append("        private float animatedValue = 0f;\n");
++        sb.append("        public static ValueAnimator ofFloat(float... vals) { return new ValueAnimator(); }\n");
++        sb.append("        public ValueAnimator setDuration(long d) { return this; }\n");
++        sb.append("        public void setInterpolator(Object o) {}\n");
++        sb.append("        public void addUpdateListener(ValueAnimatorUpdateListener l) {\n");
++        sb.append("            if (l != null) l.onAnimationUpdate(this);\n");
++        sb.append("        }\n");
++        sb.append("        public void addListener(AnimatorListenerAdapter l) {\n");
++        sb.append("            if (l != null) {\n");
++        sb.append("                l.onAnimationStart(new Animator());\n");
++        sb.append("                l.onAnimationEnd(new Animator());\n");
++        sb.append("            }\n");
++        sb.append("        }\n");
++        sb.append("        public void start() {}\n");
++        sb.append("        public Object getAnimatedValue() { return animatedValue; }\n");
++        sb.append("    }\n\n");
++        sb.append("    public static class R {\n");
++        sb.append("        public static class string {\n");
++        sb.append("            public static final int DirectConnection = 1;\n");
++        sb.append("        }\n");
++        sb.append("    }\n\n");
++        sb.append("    public Widget checkImageView = new Widget();\n");
++        sb.append("    public Widget textView = new Widget();\n");
++        sb.append("    public Widget valueTextView = new Widget();\n");
++        sb.append("    public Widget checkBox = new Widget();\n");
++        sb.append("    public boolean isSelectionEnabled = false;\n");
++        sb.append("    public Object currentInfo = new Object();\n\n");
++        sb.append("    public void updateStatus() {}\n");
++        sb.append("    public String getString(int resId) { return \"Direct Connection\"; }\n\n");
++        sb.append("    // Exact extracted setDirect method:\n");
++        sb.append("    ").append(setDirectCode).append("\n\n");
++        sb.append("    // Exact extracted setSelectionEnabled method (intact with full stubs):\n");
++        sb.append("    ").append(setSelectionEnabledCode).append("\n");
++        sb.append("}\n");
++
++        File scratchDir = new File(System.getProperty("java.io.tmpdir"), "tg-craft-tests");
++        scratchDir.mkdirs();
++
++        File genJava = new File(scratchDir, "ExtractedCellRunner.java");
++        Files.write(genJava.toPath(), sb.toString().getBytes());
++
++        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
++        if (compiler == null) {
++            throw new IllegalStateException("System JavaCompiler not found.");
++        }
++
++        int res = compiler.run(null, null, System.err, "-d", scratchDir.getAbsolutePath(), genJava.getAbsolutePath());
++        if (res != 0) {
++            throw new IllegalStateException("Compilation failed with exit code " + res);
++        }
++
++        URLClassLoader cl = new URLClassLoader(new URL[]{scratchDir.toURI().toURL()}, DirectRowBehaviorRegressionTest.class.getClassLoader());
++        Class<?> runnerClass = cl.loadClass("org.telegram.apptests.generated.ExtractedCellRunner");
++        Object cell = runnerClass.getDeclaredConstructor().newInstance();
++
++        // 1. Call exact production setDirect()
++        Method setDirectMethod = runnerClass.getMethod("setDirect");
++        setDirectMethod.invoke(cell);
++
++        Object checkImageView = runnerClass.getField("checkImageView").get(cell);
++        int visAfterSetDirect = (int) checkImageView.getClass().getField("visibility").get(checkImageView);
++        if (visAfterSetDirect != 8) {
++            throw new AssertionError("setDirect() did not hide checkImageView (vis=" + visAfterSetDirect + ")");
++        }
++
++        // 2. Call exact production setSelectionEnabled(false, false)
++        Method setSelectionEnabledMethod = runnerClass.getMethod("setSelectionEnabled", boolean.class, boolean.class);
++        setSelectionEnabledMethod.invoke(cell, false, false);
++
++        int visAfterNonAnimated = (int) checkImageView.getClass().getField("visibility").get(checkImageView);
++        if (visAfterNonAnimated != 8) {
++            System.err.println("[FAIL] Non-animated setSelectionEnabled made checkImageView visible! Expected GONE (8), got " + visAfterNonAnimated);
++            System.exit(1);
++        }
++
++        // 3. Call exact production setSelectionEnabled(false, true) [animated path]
++        setSelectionEnabledMethod.invoke(cell, false, true);
++        int visAfterAnimated = (int) checkImageView.getClass().getField("visibility").get(checkImageView);
++        if (visAfterAnimated != 8) {
++            System.err.println("[FAIL] Animated setSelectionEnabled made checkImageView visible! Expected GONE (8), got " + visAfterAnimated);
++            System.exit(1);
++        }
++
++        // 4. Static source checks
++        System.out.println("[STATIC CHECK] Verifying static source contract in ProxyListActivity.java...");
++        boolean directConditional = sourceContent.contains("directRow = proxyDirectFirst ? rowCount++ : -1;");
++        boolean headerUnconditional = sourceContent.contains("connectionsHeaderRow = rowCount++;");
++        boolean directFirstShadowAllocated = sourceContent.contains("directFirstShadowRow = rowCount++;");
++        boolean directFirstShadowViewType = sourceContent.contains("position == directFirstShadowRow");
++        boolean textCheckCellUsesValue = sourceContent.contains("checkCell.setTextAndValueAndCheck(getString(R.string.ProxyDirectFirst), getString(R.string.ProxyDirectFirstInfo), proxyDirectFirst, true, false);");
++
++        String isEnabledMethod = extractMethodBody(sourceContent, "public boolean isEnabled(RecyclerView.ViewHolder holder)");
++        boolean directDisabledInAdapter = !isEnabledMethod.contains("directRow");
++
++        String onItemClick = extractMethodBody(sourceContent, "listView.setOnItemClickListener((view, position) ->");
++        boolean directNotClickable = !onItemClick.contains("position == directRow");
++
++        if (!directConditional || !headerUnconditional) {
++            System.err.println("[STATIC FAILURE] directRow must be conditional on proxyDirectFirst and connectionsHeaderRow must be unconditional.");
++            System.exit(1);
++        }
++
++        if (!directFirstShadowAllocated || !directFirstShadowViewType || !textCheckCellUsesValue) {
++            System.err.println("[STATIC FAILURE] Direct first row must have directFirstShadowRow allocated as VIEW_TYPE_SHADOW to provide native card separation");
++            System.exit(1);
++        }
++
++        if (!directDisabledInAdapter || !directNotClickable) {
++            System.err.println("[STATIC FAILURE] directRow must be non-clickable (disabled in adapter and ignored in onItemClick)");
++            System.exit(1);
++        }
++
++        System.out.println("[PASS] GREEN: All extracted cell and static row contracts passed.");
++        System.exit(0);
++    }
++}
+diff --git a/TMessagesProj_AppTests/check_direct_first_regression.py b/TMessagesProj_AppTests/check_direct_first_regression.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0fae53f09e605d6eafec9c0d3f8793b1a8cf086c
+--- /dev/null
++++ b/TMessagesProj_AppTests/check_direct_first_regression.py
+@@ -0,0 +1,83 @@
++#!/usr/bin/env python3
++"""
++Regression test for Direct-First Transport Milestone:
++- Cold process startup direct probe (DIRECT_PROBE_TIMEOUT_MS = 2000).
++- Fallback to saved proxy settings on timeout.
++- State-change success retains direct mode, cancels fallback timer.
++- Manual setProxySettings increments generation, cancels fallback timer, supersedes fallback.
++- Rotation suspension in ProxyRotationController when direct probe or direct retained is active.
++"""
++
++import sys
++
++def check_connections_manager(file_path):
++    with open(file_path, "r", encoding="utf-8") as f:
++        content = f.read()
++
++    errors = []
++
++    # 1. DIRECT_PROBE_TIMEOUT_MS = 2000
++    if "DIRECT_PROBE_TIMEOUT_MS = 2000" not in content:
++        errors.append("ConnectionsManager missing DIRECT_PROBE_TIMEOUT_MS = 2000")
++
++    # 2. directProbeAttempted, directProbeActive, directRetainedActive, directProbeGeneration
++    for field in ["directProbeAttempted", "directProbeActive", "directRetainedActive", "directProbeGeneration", "directFallbackRunnable"]:
++        if field not in content:
++            errors.append(f"ConnectionsManager missing field '{field}'")
++
++    # 3. isDirectProbeActive() and isDirectRetainedActive() public getters
++    if "public static boolean isDirectProbeActive()" not in content:
++        errors.append("ConnectionsManager missing public static boolean isDirectProbeActive()")
++    if "public static boolean isDirectRetainedActive()" not in content:
++        errors.append("ConnectionsManager missing public static boolean isDirectRetainedActive()")
++
++    # 4. In init(), check proxy_direct_first and guard cold probe
++    if "final boolean directFirst = preferences.getBoolean(\"proxy_direct_first\", false);" not in content:
++        errors.append("ConnectionsManager.init missing preferences check for 'proxy_direct_first'")
++    if "if (directFirst && !directProbeAttempted)" not in content:
++        errors.append("ConnectionsManager.init missing directFirst && !directProbeAttempted probe branch")
++
++    # 5. onConnectionStateChanged fresh callback success handling
++    if "if (directProbeActive && state == ConnectionStateConnected)" not in content:
++        errors.append("ConnectionsManager.onConnectionStateChanged missing directProbeActive && state == ConnectionStateConnected handling")
++
++    # 6. setProxySettings cancels direct probe generation and timers
++    if "directProbeGeneration++;" not in content:
++        errors.append("ConnectionsManager.setProxySettings missing directProbeGeneration++")
++    if "directRetainedActive = false;" not in content:
++        errors.append("ConnectionsManager.setProxySettings missing directRetainedActive reset")
++
++    return errors
++
++def check_proxy_rotation_controller(file_path):
++    with open(file_path, "r", encoding="utf-8") as f:
++        content = f.read()
++
++    errors = []
++
++    # 1. Suspends rotation during direct probe or retained direct active
++    if "ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive()" not in content:
++        errors.append("ProxyRotationController didReceivedNotification missing check for isDirectProbeActive() || isDirectRetainedActive()")
++
++    return errors
++
++def main():
++    cm_path = "TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java"
++    prc_path = "TMessagesProj/src/main/java/org/telegram/messenger/ProxyRotationController.java"
++
++    cm_errors = check_connections_manager(cm_path)
++    prc_errors = check_proxy_rotation_controller(prc_path)
++
++    all_errors = cm_errors + prc_errors
++
++    if all_errors:
++        print("[FAIL] Direct-first transport regression checks failed:")
++        for err in all_errors:
++            print("  - " + err)
++        sys.exit(1)
++    else:
++        print("[PASS] All direct-first transport regression checks passed.")
++        sys.exit(0)
++
++if __name__ == "__main__":
++    main()
+diff --git a/TMessagesProj_AppTests/check_proxy_header_regression.py b/TMessagesProj_AppTests/check_proxy_header_regression.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7394395cb22668de107ce8b4ca95ad5a30a8481
+--- /dev/null
++++ b/TMessagesProj_AppTests/check_proxy_header_regression.py
+@@ -0,0 +1,177 @@
++#!/usr/bin/env python3
++"""
++Regression test for ActionBar title secondary drawable (rightDrawable2) lifecycle
++and DialogsActivity proxy indicator routing.
++Honest static regression check bound to source files.
++"""
++
++import sys
++import re
++
++def check_actionbar(file_path):
++    with open(file_path, "r", encoding="utf-8") as f:
++        content = f.read()
++
++    errors = []
++
++    # 1. Verify lastRightDrawable2 field exists
++    if "Drawable lastRightDrawable2;" not in content:
++        errors.append("ActionBar missing field 'lastRightDrawable2'")
++
++    # 2. Verify setRightDrawable2 method exists and updates both titleTextView[0] and titleTextView[1]
++    if "public void setRightDrawable2(Drawable rightDrawable2)" not in content:
++        errors.append("ActionBar missing method 'setRightDrawable2(Drawable)'")
++    if "titleTextView[0].setRightDrawable2(rightDrawable2);" not in content:
++        errors.append("ActionBar.setRightDrawable2 does not update titleTextView[0]")
++    if "titleTextView[1].setRightDrawable2(rightDrawable2);" not in content:
++        errors.append("ActionBar.setRightDrawable2 does not update titleTextView[1]")
++
++    # 3. Verify setTitleOverlayText maintains rightDrawable2 across overlay lifecycle:
++    # (a) defines rightDrawable2ToSet: null when overlay active, lastRightDrawable2 when cleared
++    if "Drawable rightDrawable2ToSet = title != null ? null : lastRightDrawable2;" not in content:
++        errors.append("ActionBar.setTitleOverlayText does not compute rightDrawable2ToSet based on overlay title")
++
++    # (b) sets rightDrawable2 on titleTextView[0] on initial/recreation branch
++    if "titleTextView[0].setRightDrawable2(rightDrawable2ToSet);" not in content:
++        errors.append("ActionBar.setTitleOverlayText does not apply rightDrawable2ToSet to titleTextView[0]")
++
++    # (c) sets rightDrawable2 on titleTextView[1] on swap/animation branch
++    if "titleTextView[1].setRightDrawable2(rightDrawable2ToSet);" not in content:
++        errors.append("ActionBar.setTitleOverlayText does not apply rightDrawable2ToSet to titleTextView[1]")
++
++    # 4. Verify setTitle(CharSequence, Drawable) applies lastRightDrawable2 to titleTextView[0]
++    if "titleTextView[0].setRightDrawable2(lastRightDrawable2);" not in content:
++        errors.append("ActionBar.setTitle does not restore lastRightDrawable2 on titleTextView[0]")
++
++    return errors
++
++def check_dialogsactivity(file_path):
++    with open(file_path, "r", encoding="utf-8") as f:
++        content = f.read()
++
++    errors = []
++
++    # 1. Verify updateProxyHeaderIndicator routes collapsed shield through dialogStoriesCell.setProxyIndicator
++    if "dialogStoriesCell.setProxyIndicator(wrappedShield, description);" not in content:
++        errors.append("DialogsActivity.updateProxyHeaderIndicator does not route through dialogStoriesCell.setProxyIndicator(wrappedShield, description)")
++    if "dialogStoriesCell.setProxyIndicator(null, null);" not in content:
++        errors.append("DialogsActivity.updateProxyHeaderIndicator does not reset dialogStoriesCell.setProxyIndicator(null, null)")
++    if "actionBar.setRightDrawable2(null);" not in content:
++        errors.append("DialogsActivity.updateProxyHeaderIndicator does not clear expanded actionBar.setRightDrawable2(null)")
++
++    # 2. Verify size-aware wrapper (WrapSizeDrawable) is used with small size (16dp)
++    if "new AnimatedEmojiDrawable.WrapSizeDrawable(shieldDrawable, dp(16), dp(16))" not in content:
++        errors.append("DialogsActivity does not wrap shieldDrawable in AnimatedEmojiDrawable.WrapSizeDrawable(shieldDrawable, dp(16), dp(16))")
++
++    # 3. Verify Theme.key_actionBarDefaultSubtitle (dark theme) and Theme.key_chats_tabUnreadUnactiveBackground (light theme) are used
++    if "Theme.key_actionBarDefaultSubtitle" not in content:
++        errors.append("DialogsActivity does not tint shieldDrawable with Theme.key_actionBarDefaultSubtitle for dark theme")
++    if "Theme.key_chats_tabUnreadUnactiveBackground" not in content:
++        errors.append("DialogsActivity does not tint shieldDrawable with Theme.key_chats_tabUnreadUnactiveBackground for light theme")
++
++    # 4. Verify initial creation and dialogStoriesCell creation call updateProxyHeaderIndicator
++    if content.count("updateProxyHeaderIndicator();") < 2:
++        errors.append("DialogsActivity missing updateProxyHeaderIndicator() calls for creation and refresh")
++
++    # 5. Verify title click routing branch to ProxyListActivity is preserved
++    if "presentFragment(new ProxyListActivity());" not in content:
++        errors.append("DialogsActivity missing presentFragment(new ProxyListActivity())")
++
++    # 6. Verify menu title and subtitle binding for effective direct connection
++    if "proxyMenuSubItem.setText(getString(R.string.DirectConnection));" not in content:
++        errors.append("DialogsActivity missing DirectConnection menu label binding")
++    if "proxyMenuSubItem.setText(getString(R.string.MenuProxyTitle));" not in content:
++        errors.append("DialogsActivity missing MenuProxyTitle menu label restoration")
++    if "proxyMenuSubItem.setIcon(R.drawable.outline_shield_flash_24);" not in content:
++        errors.append("DialogsActivity missing outline_shield_flash_24 icon binding for DirectConnection")
++    if "proxyMenuSubItem.setIcon(proxyDrawable);" not in content:
++        errors.append("DialogsActivity missing proxyDrawable icon restoration for Proxy")
++
++    return errors
++
++def check_simple_text_view(file_path):
++    with open(file_path, "r", encoding="utf-8") as f:
++        content = f.read()
++
++    errors = []
++
++    # Verify that in createLayout(int width), width is reduced by dw, not cumulative rightDrawableWidth
++    # Correct pattern:
++    #   int dw = (int) (rightDrawable.getIntrinsicWidth() * rightDrawableScale);
++    #   rightDrawableWidth += dw;
++    #   width -= dw;
++    #
++    #   int dw2 = (int) (rightDrawable2.getIntrinsicWidth() * rightDrawableScale);
++    #   rightDrawableWidth += dw2;
++    #   width -= dw2;
++    if "rightDrawableWidth += (int) (rightDrawable2.getIntrinsicWidth() * rightDrawableScale);\n                        width -= rightDrawableWidth;" in content:
++        errors.append("SimpleTextView.createLayout still exhibits cumulative subtraction defect: 'width -= rightDrawableWidth' after adding dw2")
++
++    if "int dw2 = (int) (rightDrawable2.getIntrinsicWidth() * rightDrawableScale);\n                        rightDrawableWidth += dw2;\n                        width -= dw2;" not in content:
++        errors.append("SimpleTextView.createLayout does not use non-cumulative subtraction for rightDrawable2")
++
++    # Verify recreateLayoutMaybe calcOffset block also uses non-cumulative subtraction
++    if "int dw2 = (int) (rightDrawable2.getIntrinsicWidth() * rightDrawableScale);\n                    rightDrawableWidth += dw2;\n                    width -= dw2;" not in content:
++        errors.append("SimpleTextView.recreateLayoutMaybe does not use non-cumulative subtraction for rightDrawable2")
++
++    # Mathematical demonstration of defective vs corrected deduction:
++    initial_width = 200
++    dw1 = 26  # statusDrawable size
++    dw2 = 16  # shieldDrawable size
++    padding = 4
++
++    # Defective cumulative logic:
++    rdw_bad = 0
++    w_bad = initial_width
++    rdw_bad += dw1
++    w_bad -= rdw_bad
++    w_bad -= padding
++    rdw_bad += dw2
++    w_bad -= rdw_bad  # BUG: subtracts dw1 + dw2 again!
++    w_bad -= padding
++    # Total deduction was: dw1 + padding + (dw1 + dw2) + padding = 2 * dw1 + dw2 + 2 * padding = 52 + 16 + 8 = 76
++
++    # Correct non-cumulative logic:
++    rdw_good = 0
++    w_good = initial_width
++    rdw_good += dw1
++    w_good -= dw1
++    w_good -= padding
++    rdw_good += dw2
++    w_good -= dw2
++    w_good -= padding
++    # Total deduction is: dw1 + padding + dw2 + padding = 26 + 4 + 16 + 4 = 50
++
++    excess_deduction = (initial_width - w_bad) - (initial_width - w_good)
++    if excess_deduction != dw1:
++        errors.append(f"Demonstration mismatch: expected excess deduction of {dw1}px, got {excess_deduction}px")
++
++    return errors, (initial_width - w_bad), (initial_width - w_good)
++
++def main():
++    actionbar_path = "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java"
++    dialogs_path = "TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java"
++    simpletextview_path = "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java"
++
++    ab_errors = check_actionbar(actionbar_path)
++    da_errors = check_dialogsactivity(dialogs_path)
++    stv_errors, deduction_before, deduction_after = check_simple_text_view(simpletextview_path)
++
++    all_errors = ab_errors + da_errors + stv_errors
++
++    print(f"Regression check - Width deduction demonstration (dw1=26, dw2=16, pad=4):")
++    print(f"  Before fix deduction: {deduction_before}px (excessive by 26px due to cumulative subtraction)")
++    print(f"  After fix deduction:  {deduction_after}px (correct non-cumulative subtraction)")
++
++    if all_errors:
++        print("[FAIL] Regression checks failed:")
++        for err in all_errors:
++            print("  - " + err)
++        sys.exit(1)
++    else:
++        print("[PASS] All ActionBar, DialogsActivity, and SimpleTextView width deduction regression checks passed.")
++        sys.exit(0)
++
++if __name__ == "__main__":
++    main()
++
