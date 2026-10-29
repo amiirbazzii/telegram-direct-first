@@ -14,7 +14,7 @@ A real-device demo is being prepared. This repository does not yet include a dem
 - On cold process startup, attempt a direct Telegram connection for a configured 2-second window; retain direct on the owner account's timely Connected callback, otherwise restore the saved proxy.
 - Keep stored proxy configuration separate from effective direct transport. Manual proxy selection cancels pending automatic work. Turning the option off immediately exits direct-first mode and restores a valid saved proxy when available.
 - **Direct connection** is a status-only row, visible while the option is enabled; it has no manual action or edit/info icon. Real proxy rows remain selectable/editable.
-- A connected-proxy shield beside the collapsed chat header opens the existing proxy screen. Existing native theme and lifecycle components are reused.
+- A connected-proxy shield beside the chat title opens the existing proxy screen, with or without stories. The no-stories title omits the empty status-icon slot to use the same native 4dp gap as the stories header. Existing native theme and lifecycle components are reused.
 
 Direct connections expose the device's public IP to Telegram's network. This is an opt-in tradeoff, not an anonymity feature. The 2-second value is a scheduled timeout, not a measured hard real-time guarantee under Android sleep or a blocked UI thread. A successful cold-start trial does not introduce ongoing mid-session automatic direct/proxy failover.
 
@@ -87,6 +87,7 @@ Set `TMPDIR` to an existing writable temporary directory first. The Python check
 - Accepted local candidate: assembleAfatDebug and lintAfatDebug completed successfully; lint **0 errors, 5 warnings**. Remaining categories: OldTargetApi, SelectedPhotoAccess and ExportedService. No lint suppression or lint baseline was added. Obsolete disabled measurement component registrations were removed, optional telephony hardware declared, analytics deactivation retained; no analytics dependency was added.
 - Local static checks and extracted-method harness passed. The direct-row visibility defect was reproduced before repair.
 - Physical-phone UI fixes and cold-start/fallback, manual override, background return, multi-account and proxy-rotation scenarios were reported successful by the user. These are user-reported checks, not independently instrumented measurements; no emulator or FPS claims.
-- Tested local APK SHA256: `b33a4406e50688f6b982077071f28c63dfe899f204b552d222436419e63d6d2e`. The APK is not distributed here; no bit-for-bit reproducible build claim.
+- Tested local APK SHA256: `fee35929cb729e7f0f2ad1a72d95ec9946727790772cbb4379195ba4d9f91c4d`. The APK is not distributed here; no bit-for-bit reproducible build claim.
+- Latest no-stories header visibility and spacing were accepted by the user on a physical phone. Removing an emoji/status with animation may truncate its outgoing fade in the no-stories header; that transition has not been independently validated.
 - No clean upstream lint baseline run, clean-machine rebuild, exhaustive concurrency tests or verified post-change codebase index freshness. Native callback meaning, strict timeout timing under sleep, and broader transport races remain review considerations.
 - Package secret scan is heuristic and file-scope review only, not a security certification. Review again before any public release. No commit, push, publication or submission is performed by this package.

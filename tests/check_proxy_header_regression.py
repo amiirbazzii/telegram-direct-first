@@ -59,6 +59,19 @@ def check_dialogsactivity(file_path):
     if "actionBar.setRightDrawable2(null);" not in content:
         errors.append("DialogsActivity.updateProxyHeaderIndicator does not clear expanded actionBar.setRightDrawable2(null)")
 
+    # Static owner-routing checks; not device rendering evidence.
+    header = content.split("private void updateProxyHeaderIndicator() {", 1)[1].split("private void updateProxyButton(", 1)[0]
+    if "final boolean useStoriesHeader = dialogStoriesCell != null && dialogStoriesCellVisible;" not in header:
+        errors.append("Missing visible stories-header ownership predicate")
+    if "actionBar.setRightDrawable2(wrappedShield);" not in header or "!useStoriesHeader" not in header:
+        errors.append("Missing ordinary no-stories ActionBar shield route")
+    stories = content.split("public void updateStoriesVisibility(boolean animated) {", 1)[1].split("public void createSearchViewPager()", 1)[0]
+    if "updateProxyHeaderIndicator();" not in stories:
+        errors.append("Story visibility changes do not refresh header ownership")
+
+    if "actionBar.setTitleRightDrawable(useStoriesHeader || statusDrawable != null && statusDrawable.getDrawable() != null ? statusDrawable : null);" not in header:
+        errors.append("No-stories header still reserves empty status drawable width")
+
     # 2. Verify size-aware wrapper (WrapSizeDrawable) is used with small size (16dp)
     if "new AnimatedEmojiDrawable.WrapSizeDrawable(shieldDrawable, dp(16), dp(16))" not in content:
         errors.append("DialogsActivity does not wrap shieldDrawable in AnimatedEmojiDrawable.WrapSizeDrawable(shieldDrawable, dp(16), dp(16))")

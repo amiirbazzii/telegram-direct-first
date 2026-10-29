@@ -217,14 +217,34 @@ index 778af48565566b01502586011150fa8fd76f39c0..613270bebe6596bbac3cf31f3e3fcd18
 +        ProxySettings toApply = (enabled && settings != null && settings.isValid()) ? settings : null;
 +        applyProxySettingsInternal(toApply);
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java b/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java
-index f8960d3546bdd425b2ddf571e5ca757f82155947..07779839a926a98d1527dc3e1eac750bc79380d1 100644
+index f8960d3546bdd425b2ddf571e5ca757f82155947..e8cea5be912138fea4f1dc308bc57608bad9cef6 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java
 @@ -136,0 +137 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 +    private Drawable lastRightDrawable2;
 @@ -580,0 +582 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 +            titleTextView[0].setRightDrawable2(lastRightDrawable2);
-@@ -584,0 +587,12 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
+@@ -584,0 +587,32 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
++    public void setTitleRightDrawable(Drawable drawable) {
++        if (lastRightDrawable == drawable) {
++            return;
++        }
++        if (attached && lastRightDrawable instanceof AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable) {
++            ((AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable) lastRightDrawable).setParentView(null);
++        }
++        lastRightDrawable = drawable;
++        if (!titleOverlayShown) {
++            for (SimpleTextView view : titleTextView) {
++                if (view != null) {
++                    view.setRightDrawable(drawable);
++                }
++            }
++        }
++        if (attached && drawable instanceof AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable) {
++            ((AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable) drawable).setParentView(titleTextView[0]);
++        }
++    }
++
 +    public void setRightDrawable2(Drawable rightDrawable2) {
 +        lastRightDrawable2 = rightDrawable2;
 +        if (!titleOverlayShown) {
@@ -237,16 +257,16 @@ index f8960d3546bdd425b2ddf571e5ca757f82155947..07779839a926a98d1527dc3e1eac750b
 +        }
 +    }
 +
-@@ -1649,0 +1664,4 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
+@@ -1649,0 +1684,4 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 +    public Runnable getTitleActionRunnable() {
 +        return titleActionRunnable;
 +    }
 +
-@@ -1679,0 +1698 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
+@@ -1679,0 +1718 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 +        Drawable rightDrawable2ToSet = title != null ? null : lastRightDrawable2;
-@@ -1699,0 +1719 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
+@@ -1699,0 +1739 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 +            titleTextView[0].setRightDrawable2(rightDrawable2ToSet);
-@@ -1719,0 +1740 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
+@@ -1719,0 +1760 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 +            titleTextView[1].setRightDrawable2(rightDrawable2ToSet);
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java b/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java
 index e6098666f0e08dab01e8de1cd6128a684e7f5365..c8e3a395296c8352b6f23225ef66f5a970a87105 100644
@@ -277,12 +297,14 @@ index e6098666f0e08dab01e8de1cd6128a684e7f5365..c8e3a395296c8352b6f23225ef66f5a9
 +                    rightDrawableWidth += dw2;
 +                    width -= dw2;
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
-index 0c5dc3fb84325f6c627f9ef3c1feaf8af10b7856..f29df910e73398f9212600d0930f6b1f90df631e 100644
+index 0c5dc3fb84325f6c627f9ef3c1feaf8af10b7856..fbbcff1ed788343b916161c434e48407a356b993 100644
 --- a/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
 +++ b/TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
-@@ -3521,0 +3522 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+@@ -3067,0 +3068 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++        updateProxyHeaderIndicator();
+@@ -3521,0 +3523 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 +                updateProxyHeaderIndicator();
-@@ -3532,0 +3534,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+@@ -3532,0 +3535,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 +            if (initialDialogsType == DIALOGS_TYPE_DEFAULT && !onlySelect && folderId == 0 && communityId == 0 && TextUtils.isEmpty(searchString)) {
 +                if (ConnectionsManager.getInstance(currentAccount).getConnectionState() == ConnectionsManager.ConnectionStateConnected
 +                        && !ConnectionsManager.isDirectProbeActive() && !ConnectionsManager.isDirectRetainedActive()) {
@@ -293,9 +315,9 @@ index 0c5dc3fb84325f6c627f9ef3c1feaf8af10b7856..f29df910e73398f9212600d0930f6b1f
 +                    }
 +                }
 +            }
-@@ -5324,0 +5336 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+@@ -5324,0 +5337 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 +        updateProxyHeaderIndicator();
-@@ -10219,0 +10232,32 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+@@ -10219,0 +10233,42 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 +    private void updateProxyHeaderIndicator() {
 +        if (actionBar != null) {
 +            actionBar.setRightDrawable2(null);
@@ -309,8 +331,14 @@ index 0c5dc3fb84325f6c627f9ef3c1feaf8af10b7856..f29df910e73398f9212600d0930f6b1f
 +        boolean isMainChat = initialDialogsType == DIALOGS_TYPE_DEFAULT && !onlySelect && folderId == 0 && communityId == 0 && TextUtils.isEmpty(searchString);
 +        boolean isDirect = ConnectionsManager.isDirectProbeActive() || ConnectionsManager.isDirectRetainedActive();
 +        boolean isProxyActuallyConnected = isMainChat && proxyEnabled && !isDirect && !TextUtils.isEmpty(preferences.getString("proxy_ip", "")) && connectionState == ConnectionsManager.ConnectionStateConnected;
++        final boolean useStoriesHeader = dialogStoriesCell != null && dialogStoriesCellVisible;
++        if (actionBar != null && isMainChat) {
++            actionBar.setTitleRightDrawable(useStoriesHeader || statusDrawable != null && statusDrawable.getDrawable() != null ? statusDrawable : null);
++        }
 +        if (dialogStoriesCell != null) {
-+            if (isProxyActuallyConnected) {
++            dialogStoriesCell.setProxyIndicator(null, null);
++        }
++        if (isProxyActuallyConnected) {
 +                Drawable shieldDrawable = ContextCompat.getDrawable(ApplicationLoader.applicationContext, R.drawable.header_proxy_shield_done);
 +                AnimatedEmojiDrawable.WrapSizeDrawable wrappedShield = null;
 +                if (shieldDrawable != null) {
@@ -321,16 +349,20 @@ index 0c5dc3fb84325f6c627f9ef3c1feaf8af10b7856..f29df910e73398f9212600d0930f6b1f
 +                    wrappedShield = new AnimatedEmojiDrawable.WrapSizeDrawable(shieldDrawable, dp(16), dp(16));
 +                }
 +                String description = LocaleController.getString(R.string.AppName) + ", " + LocaleController.getString(R.string.MenuProxyConnected) + ", " + LocaleController.getString(R.string.ProxySettings);
-+                dialogStoriesCell.setProxyIndicator(wrappedShield, description);
-+            } else {
-+                dialogStoriesCell.setProxyIndicator(null, null);
-+            }
++                if (useStoriesHeader) {
++                    dialogStoriesCell.setProxyIndicator(wrappedShield, description);
++                } else if (actionBar != null && !useStoriesHeader) {
++                    actionBar.setRightDrawable2(wrappedShield);
++                    if (actionBar.getTitleTextView() != null) {
++                        actionBar.getTitleTextView().setContentDescription(description);
++                    }
++                }
 +        }
 +    }
 +
-@@ -10220,0 +10265 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+@@ -10220,0 +10276 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 +        updateProxyHeaderIndicator();
-@@ -10240,3 +10285,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+@@ -10240,3 +10296,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 -        final boolean connected = currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating;
 -        proxyMenuSubItem.setSubtext(getString(proxyEnabled ? (connected ? R.string.MenuProxyConnected : R.string.MenuProxyConnecting) : R.string.MenuProxyDisabled));
 -        proxyDrawable.setConnected(proxyEnabled, connected, animated);
@@ -349,12 +381,14 @@ index 0c5dc3fb84325f6c627f9ef3c1feaf8af10b7856..f29df910e73398f9212600d0930f6b1f
 +            proxyMenuSubItem.setIcon(proxyDrawable);
 +            proxyDrawable.setConnected(true, isConnectedOrUpdating, animated);
 +        }
-@@ -12195,0 +12253,4 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+@@ -12195,0 +12264,4 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 +        arrayList.addAll(SimpleThemeDescription.createThemeDescriptions(() -> {
 +            updateProxyHeaderIndicator();
 +        }, Theme.key_actionBarDefaultSubtitle, Theme.key_chats_tabUnreadUnactiveBackground));
 +
-@@ -13770,0 +13832 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
+@@ -12811,0 +12884 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
++        updateProxyHeaderIndicator();
+@@ -13770,0 +13844 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 +            updateProxyButton(false, false);
 diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ProxyListActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ProxyListActivity.java
 index d222504bb46f54f3029f2013ee84b7480af24502..e5b57f8f4721c204dd88c37cf72b34ed92033e08 100644
@@ -911,10 +945,10 @@ index 0000000000000000000000000000000000000000..0fae53f09e605d6eafec9c0d3f8793b1
 +    main()
 diff --git a/TMessagesProj_AppTests/check_proxy_header_regression.py b/TMessagesProj_AppTests/check_proxy_header_regression.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..e7394395cb22668de107ce8b4ca95ad5a30a8481
+index 0000000000000000000000000000000000000000..e81d169de264dce7e8db3813fbd2d9af0efc53b2
 --- /dev/null
 +++ b/TMessagesProj_AppTests/check_proxy_header_regression.py
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,190 @@
 +#!/usr/bin/env python3
 +"""
 +Regression test for ActionBar title secondary drawable (rightDrawable2) lifecycle
@@ -975,6 +1009,19 @@ index 0000000000000000000000000000000000000000..e7394395cb22668de107ce8b4ca95ad5
 +        errors.append("DialogsActivity.updateProxyHeaderIndicator does not reset dialogStoriesCell.setProxyIndicator(null, null)")
 +    if "actionBar.setRightDrawable2(null);" not in content:
 +        errors.append("DialogsActivity.updateProxyHeaderIndicator does not clear expanded actionBar.setRightDrawable2(null)")
++
++    # Static owner-routing checks; not device rendering evidence.
++    header = content.split("private void updateProxyHeaderIndicator() {", 1)[1].split("private void updateProxyButton(", 1)[0]
++    if "final boolean useStoriesHeader = dialogStoriesCell != null && dialogStoriesCellVisible;" not in header:
++        errors.append("Missing visible stories-header ownership predicate")
++    if "actionBar.setRightDrawable2(wrappedShield);" not in header or "!useStoriesHeader" not in header:
++        errors.append("Missing ordinary no-stories ActionBar shield route")
++    stories = content.split("public void updateStoriesVisibility(boolean animated) {", 1)[1].split("public void createSearchViewPager()", 1)[0]
++    if "updateProxyHeaderIndicator();" not in stories:
++        errors.append("Story visibility changes do not refresh header ownership")
++
++    if "actionBar.setTitleRightDrawable(useStoriesHeader || statusDrawable != null && statusDrawable.getDrawable() != null ? statusDrawable : null);" not in header:
++        errors.append("No-stories header still reserves empty status drawable width")
 +
 +    # 2. Verify size-aware wrapper (WrapSizeDrawable) is used with small size (16dp)
 +    if "new AnimatedEmojiDrawable.WrapSizeDrawable(shieldDrawable, dp(16), dp(16))" not in content:
