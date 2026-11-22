@@ -6,7 +6,10 @@ Unofficial Telegram Android feature concept for design/code review. Source propo
 
 ## Demo
 
-A real-device demo is being prepared. This repository does not yet include a demo video.
+1. **Quick Proxy Switch:** When a connected proxy slows down, tap the shield beside the Telegram title to open Proxy Settings. Compare ping times and select a faster proxy without waiting for the current one to disconnect.
+2. **Smart Direct Connection:** Enable **Try direct connection first**. On cold startup, Telegram tries connecting without its in-app proxy. If the connection succeeds within the two-second window, it stays direct; otherwise, Telegram returns to the saved proxy. This checks connectivity, not whether a system VPN is active.
+
+The demo videos are not hosted in this repository. Both features are included in the [implementation patch](tg-craft.patch). To try them, follow the [integration instructions below](#obtain-baseline-and-apply).
 
 ## Experience
 
