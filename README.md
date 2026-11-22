@@ -9,7 +9,21 @@ Unofficial Telegram Android feature concept for design/code review. Source propo
 1. **Quick Proxy Switch:** When a connected proxy slows down, tap the shield beside the Telegram title to open Proxy Settings. Compare ping times and select a faster proxy without waiting for the current one to disconnect.
 2. **Smart Direct Connection:** Enable **Try direct connection first**. On cold startup, Telegram tries connecting without its in-app proxy. If the connection succeeds within the two-second window, it stays direct; otherwise, Telegram returns to the saved proxy. This checks connectivity, not whether a system VPN is active.
 
-The demo videos are not hosted in this repository. Both features are included in the [implementation patch](tg-craft.patch). To try them, follow the [integration instructions below](#obtain-baseline-and-apply).
+### Quick Proxy Switch
+
+[Watch the demo — Quick Proxy Switch](https://github.com/amiirbazzii/telegram-direct-first/blob/main/media/quick-proxy-switch.mp4)
+
+Open Proxy Settings in one tap from the header shield, then select another proxy. The video’s “one tap” caption refers to opening settings, not completing both actions.
+
+### Direct-first Connection
+
+[Watch the demo — Direct-first Connection](https://github.com/amiirbazzii/telegram-direct-first/blob/main/media/direct-first-connection.mp4)
+
+A successful direct connection after restarting the app. The creator confirms the app was closed and reopened after enabling the option; editing summarizes the restart with text cards. This is not automatic VPN detection: “direct” means without Telegram’s configured proxy, and the system VPN may still carry the connection. This clip does not demonstrate timeout/fallback.
+
+Both clips use synthetic demonstration data, confirmed by the creator. Their editing summarizes actions; they are demonstrations, not timing benchmarks or independent network traces. Original MP4 files are provided in [`media/`](media).
+
+Both features are included in the [implementation patch](tg-craft.patch). To try them, follow the [integration instructions below](#obtain-baseline-and-apply).
 
 ## Experience
 
